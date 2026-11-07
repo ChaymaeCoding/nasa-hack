@@ -39,24 +39,26 @@ export class LunarSceneController {
     this.clock = new THREE.Clock();
 
     this.config = {
-      cameraMode: 'CHASE',
+      cameraMode: 'ORBIT',
       showTerrainWireframe: false,
-      showSlopeHazards: true,
+      showSlopeHazards: false,
       showTrajectoryLine: true,
       showDustParticles: true,
       showPlume: true,
+      vehicleModel: 'SATURN_V',
+      lightingMode: 'DAY',
       ...initialConfig
     };
 
-    // 1. Scene Void
+    // 1. Scene Void & Sky
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x000000); // Deep Space Absolute Black Vacuum
+    this.scene.background = new THREE.Color(0x7da4d9); // Daytime atmospheric blue sky matching Photo 2
 
-    // 2. Camera
+    // 2. Camera - framed to view Saturn V and Launch Pad majestically
     const width = container.clientWidth || window.innerWidth;
     const height = container.clientHeight || window.innerHeight;
     this.camera = new THREE.PerspectiveCamera(45, width / Math.max(height, 1), 0.1, 20000);
-    this.camera.position.set(0, 15, 30);
+    this.camera.position.set(0, 16, 42);
 
     // 3. WebGL Renderer
     this.renderer = new THREE.WebGLRenderer({
@@ -109,12 +111,38 @@ export class LunarSceneController {
     this.trajectoryLine.frustumCulled = false;
     this.scene.add(this.trajectoryLine);
 
-    // Window Resize Binding
+    // Window Resize & Keyboard Binding
     window.addEventListener('resize', this.onWindowResize);
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'KeyV') {
+        const modes: ('ORBIT' | 'CHASE' | 'COCKPIT' | 'LANDING_PAD')[] = ['ORBIT', 'CHASE', 'COCKPIT', 'LANDING_PAD'];
+        const nextIdx = (modes.indexOf(this.config.cameraMode) + 1) % modes.length;
+        this.setConfig({ cameraMode: modes[nextIdx] });
+      }
+    });
+
+    // Initial environment
+    this.setEnvironmentMode(this.config.lightingMode || 'DAY');
 
     // Start 60 FPS Render Loop
     this.renderLoop = this.renderLoop.bind(this);
     this.start();
+  }
+
+  public setEnvironmentMode(mode: 'DAY' | 'NIGHT' | 'LUNAR'): void {
+    if (mode === 'DAY') {
+      this.scene.background = new THREE.Color(0x7da4d9);
+      this.skybox.starsPoints.visible = false;
+      this.lighting.setMode('DAY');
+    } else if (mode === 'NIGHT') {
+      this.scene.background = new THREE.Color(0x060814);
+      this.skybox.starsPoints.visible = true;
+      this.lighting.setMode('NIGHT');
+    } else {
+      this.scene.background = new THREE.Color(0x000000);
+      this.skybox.starsPoints.visible = true;
+      this.lighting.setMode('LUNAR');
+    }
   }
 
   public setConfig(newConfig: Partial<VisualizerConfig>): void {
@@ -125,6 +153,12 @@ export class LunarSceneController {
     }
     if (this.trajectoryLine) {
       this.trajectoryLine.visible = this.config.showTrajectoryLine;
+    }
+    if (newConfig.vehicleModel) {
+      this.lander.setVehicleModel(newConfig.vehicleModel);
+    }
+    if (newConfig.lightingMode) {
+      this.setEnvironmentMode(newConfig.lightingMode);
     }
   }
 
@@ -196,7 +230,8 @@ export class LunarSceneController {
       case 'ORBIT':
       default: {
         this.controls.enabled = true;
-        this.controls.target.copy(landerPos);
+        const targetY = this.config.vehicleModel === 'SATURN_V' ? landerPos.y + 8.0 : landerPos.y + 0.3;
+        this.controls.target.set(landerPos.x, targetY, landerPos.z);
         this.controls.update();
         break;
       }

@@ -51,6 +51,34 @@ export class LunarLighting {
     // 3. Regolith Ambient Bounce (Geometric albedo ~0.12, dark regolith keeping shadows pitch-black)
     this.ambientLight = new THREE.AmbientLight(0x1e293b, 0.12);
     this.group.add(this.ambientLight);
+
+    // Default to DAY mode for warm realistic lighting matching Photo 2
+    this.setMode('DAY');
+  }
+
+  public setMode(mode: 'DAY' | 'NIGHT' | 'LUNAR'): void {
+    if (mode === 'DAY') {
+      this.sunLight.color.setHex(0xfffaed);
+      this.sunLight.intensity = 2.4;
+      this.sunLight.position.set(400, 800, 300);
+      this.ambientLight.color.setHex(0xb0cce8);
+      this.ambientLight.intensity = 0.85;
+      this.earthshineLight.intensity = 0.0;
+    } else if (mode === 'NIGHT') {
+      this.sunLight.color.setHex(0x1e293b);
+      this.sunLight.intensity = 0.2;
+      this.ambientLight.color.setHex(0x0f172a);
+      this.ambientLight.intensity = 0.15;
+      this.earthshineLight.intensity = 0.05;
+    } else {
+      // LUNAR South Pole
+      this.sunLight.color.setHex(0xffffff);
+      this.sunLight.intensity = 3.8;
+      this.sunLight.position.set(1400, 100, 1400);
+      this.ambientLight.color.setHex(0x1e293b);
+      this.ambientLight.intensity = 0.15;
+      this.earthshineLight.intensity = 0.2;
+    }
   }
 
   public updateTarget(targetPosition: THREE.Vector3): void {

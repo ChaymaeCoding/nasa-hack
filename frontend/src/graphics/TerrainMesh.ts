@@ -134,8 +134,8 @@ export class TerrainMesh {
       vertexShader: terrainVertexShader,
       fragmentShader: terrainFragmentShader,
       uniforms: {
-        uShowSlopeHazard: { value: true },
-        uSunDirection: { value: new THREE.Vector3(0.8, 0.04, 0.6).normalize() }
+        uShowSlopeHazard: { value: false },
+        uSunDirection: { value: new THREE.Vector3(0.8, 0.4, 0.6).normalize() }
       },
       side: THREE.DoubleSide
     });

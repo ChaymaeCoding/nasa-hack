@@ -1,102 +1,175 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { VacuumPlume } from './VacuumPlumeShader';
+import { VehicleModelType } from '../types/visualizer';
 
 export class LanderModel {
   public group: THREE.Group;
   public nozzlePivot: THREE.Group;
   public plume: VacuumPlume;
   public isGltfLoaded = false;
-  private gltfRoot: THREE.Object3D | null = null;
+
+  // Subsystem vehicle groups
+  public dropperGroup: THREE.Group;
+  public saturnGroup: THREE.Group;
+  public launcherPadGroup: THREE.Group;
+
+  public currentModelType: VehicleModelType = 'SATURN_V';
+
+  private gltfDropperRoot: THREE.Object3D | null = null;
   private gltfNozzlePivot: THREE.Object3D | null = null;
-  private proceduralRoot: THREE.Group;
+  private proceduralDropperRoot: THREE.Group;
+
+  private saturnMesh: THREE.Object3D | null = null;
+  private padMesh: THREE.Object3D | null = null;
 
   constructor() {
     this.group = new THREE.Group();
 
+    // 1. Dropper Group
+    this.dropperGroup = new THREE.Group();
+    this.group.add(this.dropperGroup);
+
+    // 2. Saturn V Group & Launch Pad Group
+    this.saturnGroup = new THREE.Group();
+    this.launcherPadGroup = new THREE.Group();
+    this.group.add(this.saturnGroup);
+    this.group.add(this.launcherPadGroup);
+
     // Gimbal pivot group for nozzle articulation
     this.nozzlePivot = new THREE.Group();
-    // In Build_Dropper.py, gimbal hinge is at z ≈ 0.25m above base
     this.nozzlePivot.position.set(0, 0.25, 0);
 
     // Initialize Vacuum Plume Shader
     this.plume = new VacuumPlume();
-    // Plume attaches to nozzle exit (~0.18m in CAD coordinate, pointing down)
     this.plume.mesh.position.set(0, -0.07, 0);
     this.nozzlePivot.add(this.plume.mesh);
 
     // Build procedural fallback first so something is immediately visible
-    this.proceduralRoot = this.buildProceduralDropper();
-    this.group.add(this.proceduralRoot);
+    this.proceduralDropperRoot = this.buildProceduralDropper();
+    this.dropperGroup.add(this.proceduralDropperRoot);
 
-    // Asynchronously attempt to load exported GLB asset
-    this.loadGltfAsset('/assets/models/dropper_x.glb');
+    // Asynchronously load all 3D GLB assets
+    this.loadDropperAsset('/assets/models/dropper_x.glb');
+    this.loadSaturnVAsset('/assets/models/saturn_V_syria.glb');
+    this.loadLauncherPadAsset('/assets/models/rocket_laucher_pad.glb');
+
+    // Default to SATURN_V to match Photo 2
+    this.setVehicleModel('SATURN_V');
   }
 
-  private loadGltfAsset(url: string): void {
-    try {
-      let targetUrl = url;
-      if (typeof window !== 'undefined' && window.location && window.location.href) {
-        try {
-          targetUrl = new URL(url, window.location.href).href;
-        } catch {
-          // fallback to original
-        }
-      }
-
-      const loader = new GLTFLoader();
-      loader.load(
-        targetUrl,
-        (gltf) => {
-          this.gltfRoot = gltf.scene;
-          // Search for nozzle bell node to articulate
-          let foundNozzle: THREE.Object3D | null = null;
-          this.gltfRoot.traverse((child) => {
-            if (child instanceof THREE.Mesh) {
-              child.castShadow = true;
-              child.receiveShadow = true;
-            }
-            if (child.name.toLowerCase().includes('nozzle') || child.name.toLowerCase().includes('gimbal')) {
-              if (!foundNozzle) foundNozzle = child;
-            }
-          });
-
-          // If nozzle found, wrap it in a gimbal pivot or attach plume
-          if (foundNozzle) {
-            this.gltfNozzlePivot = foundNozzle;
-          }
-
-          // Replace procedural model with loaded GLTF
-          this.group.remove(this.proceduralRoot);
-          this.group.add(this.gltfRoot);
-
-          // Re-parent plume to the GLTF model's nozzle
-          if (this.gltfNozzlePivot) {
-            this.gltfNozzlePivot.add(this.plume.mesh);
-            this.plume.mesh.position.set(0, -0.06, 0);
-          } else {
-            this.gltfRoot.add(this.nozzlePivot);
-          }
-
-          this.isGltfLoaded = true;
-        },
-        undefined,
-        () => {
-          // GLTF load failed, procedural fallback remains active
-        }
-      );
-    } catch {
-      // Procedural fallback active
+  public setVehicleModel(type: VehicleModelType): void {
+    this.currentModelType = type;
+    if (type === 'SATURN_V') {
+      this.saturnGroup.visible = true;
+      this.launcherPadGroup.visible = true;
+      this.dropperGroup.visible = false;
+    } else {
+      this.saturnGroup.visible = false;
+      this.launcherPadGroup.visible = false;
+      this.dropperGroup.visible = true;
     }
   }
 
-  /**
-   * Translates geometry definitions from Build_Dropper.py into Three.js primitives
-   */
+  private resolveUrl(url: string): string {
+    if (typeof window !== 'undefined' && window.location && window.location.href) {
+      try {
+        return new URL(url, window.location.href).href;
+      } catch {
+        // fallback
+      }
+    }
+    return url;
+  }
+
+  private loadDropperAsset(url: string): void {
+    const loader = new GLTFLoader();
+    loader.load(
+      this.resolveUrl(url),
+      (gltf) => {
+        this.gltfDropperRoot = gltf.scene;
+        let foundNozzle: THREE.Object3D | null = null;
+        this.gltfDropperRoot.traverse((child) => {
+          if (child instanceof THREE.Mesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+          }
+          if (child.name.toLowerCase().includes('nozzle') || child.name.toLowerCase().includes('gimbal')) {
+            if (!foundNozzle) foundNozzle = child;
+          }
+        });
+
+        if (foundNozzle) {
+          this.gltfNozzlePivot = foundNozzle;
+        }
+
+        this.dropperGroup.remove(this.proceduralDropperRoot);
+        this.dropperGroup.add(this.gltfDropperRoot);
+
+        if (this.gltfNozzlePivot) {
+          this.gltfNozzlePivot.add(this.plume.mesh);
+          this.plume.mesh.position.set(0, -0.06, 0);
+        } else {
+          this.gltfDropperRoot.add(this.nozzlePivot);
+        }
+
+        this.isGltfLoaded = true;
+      },
+      undefined,
+      () => {
+        // procedural fallback active
+      }
+    );
+  }
+
+  private loadSaturnVAsset(url: string): void {
+    const loader = new GLTFLoader();
+    loader.load(
+      this.resolveUrl(url),
+      (gltf) => {
+        this.saturnMesh = gltf.scene;
+        this.saturnMesh.traverse((child) => {
+          if (child instanceof THREE.Mesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+          }
+        });
+        // Scale and center Saturn V so engine rests on pad at Y=0
+        // Saturn base is at Y = -7.0, offset by +7.0 so base is at 0
+        this.saturnMesh.position.set(0, 7.0, 0);
+        this.saturnMesh.scale.set(1.0, 1.0, 1.0);
+        this.saturnGroup.add(this.saturnMesh);
+      },
+      undefined,
+      () => {}
+    );
+  }
+
+  private loadLauncherPadAsset(url: string): void {
+    const loader = new GLTFLoader();
+    loader.load(
+      this.resolveUrl(url),
+      (gltf) => {
+        this.padMesh = gltf.scene;
+        this.padMesh.traverse((child) => {
+          if (child instanceof THREE.Mesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+          }
+        });
+        // Position pad so launch table flame opening is at (0, 0, 0)
+        this.padMesh.position.set(-1.0, 0.0, 0.0);
+        this.padMesh.scale.set(1.0, 1.0, 1.0);
+        this.launcherPadGroup.add(this.padMesh);
+      },
+      undefined,
+      () => {}
+    );
+  }
+
   private buildProceduralDropper(): THREE.Group {
     const root = new THREE.Group();
 
-    // Materials
     const goldMLI = new THREE.MeshStandardMaterial({
       color: 0xd49b28,
       metalness: 0.85,
@@ -127,7 +200,7 @@ export class LanderModel {
       roughness: 0.6
     });
 
-    // 1. Hexagonal Frame Rims (top and bottom)
+    // 1. Hexagonal Frame Rims
     for (const y of [0.28, 0.55]) {
       const hexGeo = new THREE.CylinderGeometry(0.18, 0.18, 0.015, 6);
       const hexMesh = new THREE.Mesh(hexGeo, frameMetal);
@@ -136,20 +209,18 @@ export class LanderModel {
       root.add(hexMesh);
     }
 
-    // 2. Corner Longerons & MLI Gold Panels (6 faces)
+    // 2. Corner Longerons & MLI Gold Panels
     for (let i = 0; i < 6; i++) {
       const angle = (i * Math.PI) / 3;
       const x = 0.168 * Math.cos(angle);
       const z = 0.168 * Math.sin(angle);
 
-      // Vertical longeron rod
       const rodGeo = new THREE.CylinderGeometry(0.007, 0.007, 0.27, 8);
       const rodMesh = new THREE.Mesh(rodGeo, frameMetal);
       rodMesh.position.set(x, 0.415, z);
       rodMesh.castShadow = true;
       root.add(rodMesh);
 
-      // Gold MLI Face
       const midAngle = angle + Math.PI / 6;
       const mx = 0.152 * Math.cos(midAngle);
       const mz = 0.152 * Math.sin(midAngle);
@@ -161,7 +232,7 @@ export class LanderModel {
       root.add(panelMesh);
     }
 
-    // 3. Identification Panel & Moroccan Flag
+    // 3. Identification Panel
     const idPanelGeo = new THREE.BoxGeometry(0.14, 0.16, 0.008);
     const idPanel = new THREE.Mesh(idPanelGeo, darkComposite);
     idPanel.position.set(0, 0.415, -0.158);
@@ -172,7 +243,7 @@ export class LanderModel {
     flagMesh.position.set(0, 0.385, -0.163);
     root.add(flagMesh);
 
-    // 4. Avionics Equipment Decks & Propellant Tank
+    // 4. Avionics Decks & Tank
     const deckGeo = new THREE.CylinderGeometry(0.145, 0.145, 0.005, 6);
     const deck1 = new THREE.Mesh(deckGeo, frameMetal);
     deck1.position.y = 0.33;
@@ -180,7 +251,6 @@ export class LanderModel {
     deck2.position.y = 0.46;
     root.add(deck1, deck2);
 
-    // Spherical Propellant Tank
     const tankGeo = new THREE.SphereGeometry(0.06, 24, 24);
     tankGeo.scale(1.0, 1.35, 1.0);
     const tankMesh = new THREE.Mesh(tankGeo, frameMetal);
@@ -193,13 +263,12 @@ export class LanderModel {
     gimbalBoss.position.set(0, 0.264, 0);
     root.add(gimbalBoss);
 
-    // Attach nozzle bell mesh into the nozzlePivot
     const chamberGeo = new THREE.CylinderGeometry(0.018, 0.018, 0.024, 16);
     const chamber = new THREE.Mesh(chamberGeo, frameMetal);
     chamber.position.set(0, -0.01, 0);
 
     const nozzleGeo = new THREE.ConeGeometry(0.035, 0.05, 32, 1, true);
-    nozzleGeo.rotateX(Math.PI); // wide cone opening downward
+    nozzleGeo.rotateX(Math.PI);
     const nozzleMesh = new THREE.Mesh(nozzleGeo, nozzleGraphite);
     nozzleMesh.position.set(0, -0.04, 0);
     nozzleMesh.castShadow = true;
@@ -208,14 +277,13 @@ export class LanderModel {
     this.nozzlePivot.add(nozzleMesh);
     root.add(this.nozzlePivot);
 
-    // 6. Four Articulated Inverted-Tripod Landing Gear Legs
+    // 6. Four Landing Legs
     for (let i = 0; i < 4; i++) {
       const legAngle = Math.PI / 4 + (i * Math.PI) / 2;
       const legPivot = new THREE.Group();
       legPivot.position.set(0.142 * Math.cos(legAngle), 0.33, 0.142 * Math.sin(legAngle));
       legPivot.rotation.y = -legAngle;
 
-      // Primary strut
       const strutGeo = new THREE.CylinderGeometry(0.009, 0.009, 0.22, 12);
       const strut = new THREE.Mesh(strutGeo, darkComposite);
       strut.position.set(0.08, -0.10, 0);
@@ -223,7 +291,6 @@ export class LanderModel {
       strut.castShadow = true;
       legPivot.add(strut);
 
-      // Damper piston
       const pistonGeo = new THREE.CylinderGeometry(0.006, 0.006, 0.16, 12);
       const piston = new THREE.Mesh(pistonGeo, frameMetal);
       piston.position.set(0.19, -0.25, 0);
@@ -231,7 +298,6 @@ export class LanderModel {
       piston.castShadow = true;
       legPivot.add(piston);
 
-      // Landing Footpad contact disc
       const footpadGeo = new THREE.CylinderGeometry(0.052, 0.052, 0.01, 32);
       const footpad = new THREE.Mesh(footpadGeo, frameMetal);
       footpad.position.set(0.244, -0.32, 0);
@@ -241,7 +307,7 @@ export class LanderModel {
       root.add(legPivot);
     }
 
-    // 7. Deployable Solar Panels (Left & Right)
+    // 7. Deployable Solar Panels
     for (const side of [-1, 1]) {
       const solarGroup = new THREE.Group();
       solarGroup.position.set(side * 0.176, 0.54, 0);
@@ -251,7 +317,6 @@ export class LanderModel {
       substrate.position.set(side * 0.11, 0, 0);
       solarGroup.add(substrate);
 
-      // Solar Silicon Blue Cells
       const cellGeo = new THREE.BoxGeometry(0.20, 0.002, 0.14);
       const cell = new THREE.Mesh(cellGeo, solarBlue);
       cell.position.set(side * 0.11, 0.004, 0);
@@ -260,7 +325,7 @@ export class LanderModel {
       root.add(solarGroup);
     }
 
-    // 8. Sensors: LiDAR Dome and Dual Cameras
+    // 8. Sensors
     const lidarGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.04, 16);
     const lidar = new THREE.Mesh(lidarGeo, darkComposite);
     lidar.position.set(0, 0.59, 0);
@@ -276,44 +341,44 @@ export class LanderModel {
     return root;
   }
 
-  /**
-   * Applies vehicle telemetry attitude, position, nozzle gimbaling, and plume scaling
-   */
   public updateTelemetry(
     x: number,
     y: number,
     z: number,
-    q0: number, // w
-    q1: number, // x
-    q2: number, // y
-    q3: number, // z
+    q0: number,
+    q1: number,
+    q2: number,
+    q3: number,
     gimbalPitchDeg: number,
     gimbalYawDeg: number,
     thrustCmd: number,
     simTime: number
   ): void {
-    // 1. Position in Three.js coordinate space: X = downrange, Y = altitude AGL, Z = -crossrange
-    // In Build_Dropper, footpads rest at ~ -0.32m when vehicle root is at 0.
-    // Offset vehicle root by +0.32 so when telemetry altitude = 0, footpads rest on the lunar surface!
-    this.group.position.set(x, z + 0.32, -y);
+    if (this.currentModelType === 'SATURN_V') {
+      // In Saturn V mode: position rocket on the pad, rising with altitude z
+      this.saturnGroup.position.set(x, z, -y);
+      this.saturnGroup.quaternion.set(q1, q2, q3, q0);
+      // Keep launcher pad fixed at origin on the ground
+      this.launcherPadGroup.position.set(0, 0, 0);
+    } else {
+      // In Dropper X mode:
+      this.dropperGroup.position.set(x, z + 0.32, -y);
+      this.dropperGroup.quaternion.set(q1, q2, q3, q0);
+    }
 
-    // 2. Unit Quaternion Attitude
-    this.group.quaternion.set(q1, q2, q3, q0);
-
-    // 3. Dynamic 2-Axis Engine Nozzle Gimbaling (clamped to ±20.0 degrees)
+    // Dynamic 2-Axis Engine Nozzle Gimbaling
     const pitchClamped = THREE.MathUtils.clamp(gimbalPitchDeg, -20.0, 20.0);
     const yawClamped = THREE.MathUtils.clamp(gimbalYawDeg, -20.0, 20.0);
     const pitchRad = THREE.MathUtils.degToRad(pitchClamped);
     const yawRad = THREE.MathUtils.degToRad(yawClamped);
 
-    // Apply rotation to nozzle pivot
     if (this.gltfNozzlePivot) {
       this.gltfNozzlePivot.rotation.set(pitchRad, 0, yawRad);
     } else {
       this.nozzlePivot.rotation.set(pitchRad, 0, yawRad);
     }
 
-    // 4. Update Vacuum Plume Particle Shader
+    // Update Vacuum Plume Particle Shader
     this.plume.update(simTime, thrustCmd);
   }
 

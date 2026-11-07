@@ -52,11 +52,11 @@ export class SkyboxEnvironment {
     this.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
     this.material = new THREE.PointsMaterial({
-      size: 2.2,
+      size: 1.2,
       vertexColors: true,
       transparent: true,
-      opacity: 0.95,
-      sizeAttenuation: false, // Keep stars pin-sharp regardless of camera distance
+      opacity: 0.85,
+      sizeAttenuation: false,
       depthWrite: false
     });
 

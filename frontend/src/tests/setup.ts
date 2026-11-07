@@ -185,8 +185,20 @@ if (typeof HTMLCanvasElement !== 'undefined') {
   } as unknown as typeof HTMLCanvasElement.prototype.getContext;
 }
 
-// Mock requestAnimationFrame / cancelAnimationFrame
+// Mock requestAnimationFrame / cancelAnimationFrame & matchMedia
 if (typeof window !== 'undefined') {
   window.requestAnimationFrame = window.requestAnimationFrame || ((cb) => setTimeout(cb, 16));
   window.cancelAnimationFrame = window.cancelAnimationFrame || ((id) => clearTimeout(id));
+  if (!window.matchMedia) {
+    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+  }
 }
